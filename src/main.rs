@@ -5,6 +5,17 @@ use tcod::console::*;
 const SCREEN_WIDTH: i32 = 80;
 const SCREEN_HEIGHT: i32 = 50;
 
+// size of the map
+const MAP_WIDTH: i32 = 80;
+const MAP_HEIGHT: i32 = 45;
+
+const COLOR_DARK_WALL: Color = Color { r: 0, g: 0, b: 100 };
+const COLOR_DARK_GROUND: Color = Color {
+    r: 50,
+    g: 50,
+    b: 150,
+};
+
 const LIMIT_FPS: i32 = 20; // 20 frames-per-second maximum
 
 struct Tcod {
@@ -14,6 +25,7 @@ struct Tcod {
 
 // This is a generic object: the player, a monster, an item, the stairs...
 // It's alway represented by a character on the screen.
+#[derive(Debug)]
 struct Object {
     x: i32,
     y: i32,
@@ -37,6 +49,79 @@ impl Object {
         con.set_default_foreground(self.color);
         con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
     }
+}
+
+// A tile of the map and its properties
+#[derive(Clone, Copy, Debug)]
+struct Tile {
+    blocked: bool,
+    block_sight: bool,
+}
+
+impl Tile {
+    pub fn empty() -> Self {
+        Tile {
+            blocked: false,
+            block_sight: false,
+        }
+    }
+
+    pub fn wall() -> Self {
+        Tile {
+            blocked: true,
+            block_sight: true,
+        }
+    }
+}
+
+type Map = Vec<Vec<Tile>>;
+
+struct Game {
+    map: Map,
+}
+
+fn make_map() -> Map {
+    // fill map with "unblocked" tiles
+    let mut map = vec![vec![Tile::empty(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
+
+    // place two pillars to test the map
+    map[30][22] = Tile::wall();
+    map[50][22] = Tile::wall();
+
+    map
+}
+
+
+fn render_all(tcod: &mut Tcod, game: &Game, objects: &[Object]) {
+    // draw all objects in the list
+    for object in objects {
+        object.draw(&mut tcod.con);
+    }
+
+    // go through all tiles, and set their background color
+    for y in 0..MAP_HEIGHT {
+        for x in 0..MAP_WIDTH {
+            let wall = game.map[x as usize][y as usize].block_sight;
+            if wall {
+                tcod.con
+                    .set_char_background(x, y, COLOR_DARK_WALL, BackgroundFlag::Set);
+            } else {
+                tcod.con
+                    .set_char_background(x, y, COLOR_DARK_GROUND, BackgroundFlag::Set);
+            }
+        }
+    }
+
+    // blit the contents of "con" to the root consoles and present it
+    blit(
+        &tcod.con,
+        (0,0),
+        (MAP_WIDTH, MAP_HEIGHT),
+        &mut tcod.root,
+        (0,0),
+        1.0,
+        1.0,
+    );
 }
 
 fn handle_keys(tcod: &mut Tcod, player: &mut Object) -> bool {
@@ -66,7 +151,6 @@ fn handle_keys(tcod: &mut Tcod, player: &mut Object) -> bool {
     false
 }
 
-
 fn main() {
     tcod::system::set_fps(LIMIT_FPS);
 
@@ -77,7 +161,7 @@ fn main() {
         .title("Rust/libtcod tutorial")
         .init();
 
-    let con = Offscreen::new(SCREEN_WIDTH, SCREEN_HEIGHT);
+    let con = Offscreen::new(MAP_WIDTH, MAP_HEIGHT);
 
     let mut tcod = Tcod { root, con };
 
@@ -90,6 +174,11 @@ fn main() {
     // the list of objects with those two
     let mut objects = [player, npc];
 
+    let game = Game {
+        // generate map (at this point it's not drawn to the screen)
+        map: make_map(),
+    };
+
     while !tcod.root.window_closed() {
         // clear the screen of the previous frame
         tcod.con.clear();
@@ -98,16 +187,8 @@ fn main() {
             object.draw(&mut tcod.con);
         }
 
-        // blit the contents of "con" to the root consoles and present it
-        blit(
-            &tcod.con,
-            (0,0),
-            (SCREEN_WIDTH, SCREEN_HEIGHT),
-            &mut tcod.root,
-            (0,0),
-            1.0,
-            1.0,
-        );
+        render_all(&mut tcod, &game, &objects);
+
         tcod.root.flush();
 
         // handle keys and exit game if needed
